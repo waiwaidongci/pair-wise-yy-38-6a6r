@@ -3,6 +3,7 @@ import argparse
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from src.http_api import make_handler
+from src.recon_service import ReconService
 from src.repository import Repository
 from src.service import Service
 def parse_args():
@@ -13,7 +14,8 @@ def parse_args():
     return parser.parse_args()
 def main():
     args=parse_args(); repository=Repository(args.db); service=Service(repository)
-    server=ThreadingHTTPServer((args.host,args.port),make_handler(service,str(Path(__file__).resolve().parent/"static")))
+    recon=ReconService(repository)
+    server=ThreadingHTTPServer((args.host,args.port),make_handler(service,str(Path(__file__).resolve().parent/"static"),recon))
     print(f"listening on http://{args.host}:{args.port}")
     try: server.serve_forever()
     except KeyboardInterrupt: pass

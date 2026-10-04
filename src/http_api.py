@@ -8,10 +8,11 @@ from urllib.parse import parse_qs, urlparse
 
 from .domain import (ConflictError, DomainError, NotFoundError, PermissionDenied,
                      ValidationError)
+from .recon_service import ReconService
 from .service import Service
 
 
-def make_handler(service: Service, static_dir: str):
+def make_handler(service: Service, static_dir: str, recon: ReconService):
     root = Path(static_dir)
 
     class Handler(BaseHTTPRequestHandler):
@@ -98,6 +99,30 @@ def make_handler(service: Service, static_dir: str):
                     actor, role = self._identity()
                     del actor
                     self._json(200, {"events": service.audit(role)})
+                elif path == "/api/recon/points":
+                    actor, role = self._identity()
+                    del actor
+                    self._json(200, {"points": recon.list_points(role)})
+                elif path == "/api/recon/reconciliation":
+                    actor, role = self._identity()
+                    point = parse_qs(urlparse(self.path).query).get("point", [None])[0]
+                    del actor
+                    self._json(200, recon.reconciliation_view(role, point))
+                elif path == "/api/recon/pending":
+                    actor, role = self._identity()
+                    point = parse_qs(urlparse(self.path).query).get("point", [None])[0]
+                    del actor
+                    self._json(200, {"pending": recon.pending_review(role, point)})
+                elif path == "/api/recon/commands":
+                    actor, role = self._identity()
+                    point = parse_qs(urlparse(self.path).query).get("point", [None])[0]
+                    del actor
+                    self._json(200, {"commands": recon.list_commands(role, point)})
+                elif path == "/api/recon/closures":
+                    actor, role = self._identity()
+                    point = parse_qs(urlparse(self.path).query).get("point", [None])[0]
+                    del actor
+                    self._json(200, {"closures": recon.list_closures(role, point)})
                 else:
                     self._json(404, {"error": "not_found"})
             except Exception as exc:
@@ -119,6 +144,24 @@ def make_handler(service: Service, static_dir: str):
                     expected = body.get("expected_version")
                     self._json(200, service.transition(
                         item_id, target, expected, actor, role))
+                elif path == "/api/recon/points":
+                    self._json(201, recon.register_point(body, actor, role))
+                elif path == "/api/recon/observations":
+                    self._json(201, recon.ingest_observation(body, actor, role))
+                elif path == "/api/recon/batch":
+                    self._json(201, recon.ingest_batch(body, actor, role))
+                elif path == "/api/recon/receipts":
+                    self._json(201, recon.submit_receipt(body, actor, role))
+                elif path == "/api/recon/closures":
+                    self._json(201, recon.submit_closure(body, actor, role))
+                elif path.startswith("/api/recon/commands/") and path.endswith("/execute"):
+                    command_id = int(path.split("/")[4])
+                    self._json(200, recon.execute_command(command_id, actor, role))
+                elif path.startswith("/api/recon/pending/") and path.endswith("/resolve"):
+                    observation_id = int(path.split("/")[4])
+                    approve = bool(body.get("approve"))
+                    self._json(200, recon.resolve_pending(
+                        observation_id, approve, actor, role))
                 else:
                     self._json(404, {"error": "not_found"})
             except Exception as exc:
