@@ -76,27 +76,30 @@ def make_handler(service: Service, static_dir: str):
         def do_GET(self) -> None:
             try:
                 path = urlparse(self.path).path
+                query = parse_qs(urlparse(self.path).query)
+                actor, role = self._identity()
+                del actor
                 if path == "/health":
                     self._json(200, {"status": "ok"})
                 elif path == "/":
                     self._html(root / "index.html")
                 elif path == "/api/items":
-                    actor, role = self._identity()
-                    del actor
                     self._json(200, {"items": service.list_items(role)})
                 elif path.startswith("/api/items/") and path.endswith("/records"):
                     item_id = int(path.split("/")[3])
-                    actor, role = self._identity()
-                    del actor
                     self._json(200, {"records": service.list_records(item_id, role)})
                 elif path.startswith("/api/items/"):
                     item_id = int(path.rsplit("/", 1)[-1])
-                    actor, role = self._identity()
-                    del actor
                     self._json(200, service.get_item(item_id, role))
+                elif path == "/api/readings/reconciliation":
+                    point = query.get("point", [None])[0]
+                    self._json(200, {"reconciliation": service.list_reconciliation(role, point)})
+                elif path == "/api/readings":
+                    point = query.get("point", [None])[0]
+                    self._json(200, {"readings": service.list_readings(role, point)})
+                elif path == "/api/backfills":
+                    self._json(200, {"batches": service.list_backfills(role)})
                 elif path == "/api/audit":
-                    actor, role = self._identity()
-                    del actor
                     self._json(200, {"events": service.audit(role)})
                 else:
                     self._json(404, {"error": "not_found"})
@@ -119,6 +122,13 @@ def make_handler(service: Service, static_dir: str):
                     expected = body.get("expected_version")
                     self._json(200, service.transition(
                         item_id, target, expected, actor, role))
+                elif path == "/api/readings":
+                    self._json(201, service.submit_reading(body, actor, role))
+                elif path.startswith("/api/readings/") and path.endswith("/confirm"):
+                    reading_id = int(path.split("/")[3])
+                    self._json(200, service.confirm_reading(reading_id, actor, role))
+                elif path == "/api/backfills":
+                    self._json(201, service.submit_backfill(body, actor, role))
                 else:
                     self._json(404, {"error": "not_found"})
             except Exception as exc:
